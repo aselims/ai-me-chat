@@ -1,0 +1,70 @@
+{
+  "name": "@ai-me-chat/nextjs",
+  "version": "0.1.0",
+  "description": "AI-Me Next.js integration — route handler factory, auto-discovery, and proxy",
+  "license": "MIT",
+  "keywords": [
+    "ai",
+    "copilot",
+    "nextjs",
+    "app-router",
+    "route-handler",
+    "ai-assistant",
+    "vercel-ai-sdk",
+    "openapi"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aselims/ai-me-chat",
+    "directory": "packages/nextjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
+    "clean": "rm -rf dist"
+  },
+  "peerDependencies": {
+    "ai": "^6.0.0",
+    "next": "^16.0.0",
+    "react": "^19.0.0"
+  },
+  "dependencies": {
+    "@ai-me-chat/core": "workspace:*",
+    "picomatch": "^4.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@types/picomatch": "^4.0.2",
+    "@types/react": "^19.0.0",
+    "ai": "^6.0.116",
+    "next": "^16.1.6",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0",
+    "zod": "^4.3.6"
+  }
+}

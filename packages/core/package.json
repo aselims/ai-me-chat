@@ -1,0 +1,59 @@
+{
+  "name": "@ai-me-chat/core",
+  "version": "0.1.0",
+  "description": "AI-Me core — framework-agnostic AI copilot engine with tool discovery, schema extraction, and OpenAPI support",
+  "license": "MIT",
+  "keywords": [
+    "ai",
+    "copilot",
+    "chatbot",
+    "ai-assistant",
+    "tool-calling",
+    "openapi",
+    "vercel-ai-sdk",
+    "llm"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aselims/ai-me-chat",
+    "directory": "packages/core"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
+    "clean": "rm -rf dist"
+  },
+  "peerDependencies": {
+    "ai": "^6.0.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "ai": "^6.0.116",
+    "zod": "^4.3.6",
+    "typescript": "^5.9.3",
+    "tsup": "^8.5.1",
+    "vitest": "^4.1.0"
+  }
+}
