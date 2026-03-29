@@ -427,6 +427,64 @@ const handler = createAIMeHandler({
 export { handler as GET, handler as POST };`}
       />
 
+      {/* ── Cloud ── */}
+      <h2 style={s.h2}>@ai-me-chat/cloud</h2>
+      <p style={s.p}>
+        Server-side utilities for the AI-Me Cloud integration. These are used internally by the
+        Cloud Dashboard — you generally do not need to call them directly unless building custom
+        integrations.
+      </p>
+
+      <FnEntry
+        name="generateApiKey"
+        pkg="@ai-me-chat/cloud"
+        tag="sync"
+        tagColor="#10b981"
+        signature={`function generateApiKey(prefix?: string): string`}
+        description="Generates a cryptographically random API key with an optional prefix. The returned key is the plaintext value that must be stored securely by the caller."
+        params={[
+          { name: "prefix", type: "string", desc: 'Optional prefix for the key, e.g. "aime_". Defaults to "aime_".' },
+        ]}
+        returns="string — e.g. aime_a1b2c3d4e5f6..."
+        example={`import { generateApiKey, hashApiKey } from "@ai-me-chat/cloud";
+
+const plaintext = generateApiKey("aime_");
+const hashed = await hashApiKey(plaintext);
+
+// Store hashed in DB, return plaintext to user once.`}
+      />
+
+      <FnEntry
+        name="hashApiKey"
+        pkg="@ai-me-chat/cloud"
+        tag="async"
+        tagColor="#7c6aff"
+        signature={`async function hashApiKey(key: string): Promise<string>`}
+        description="Hashes an API key using SHA-256. Store the hash in the database, never the plaintext. Use this when verifying incoming requests."
+        params={[
+          { name: "key", type: "string", desc: "The plaintext API key to hash." },
+        ]}
+        returns="Promise<string> — hex-encoded SHA-256 hash"
+      />
+
+      <FnEntry
+        name="createDb"
+        pkg="@ai-me-chat/cloud"
+        tag="sync"
+        tagColor="#10b981"
+        signature={`function createDb(
+  connectionString: string
+): DrizzlePostgresDatabase`}
+        description="Creates a Drizzle ORM database instance connected to the AI-Me Cloud PostgreSQL database. Used internally by the Cloud Dashboard server — call this once at module scope."
+        params={[
+          { name: "connectionString", type: "string", desc: "PostgreSQL connection string. Typically from the DATABASE_URL environment variable." },
+        ]}
+        returns="DrizzlePostgresDatabase"
+        example={`import { createDb } from "@ai-me-chat/cloud";
+
+// Singleton — module scope
+export const db = createDb(process.env.DATABASE_URL!);`}
+      />
     </div>
   );
 }

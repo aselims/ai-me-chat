@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import { streamText, convertToModelMessages, tool, stepCountIs } from "ai";
 import type { UIMessage } from "ai";
 import {
@@ -13,6 +15,27 @@ import { scanRoutes } from "./scanner.js";
 import { filterRoutes } from "./filter.js";
 
 /**
+ * Resolve the Next.js app directory.
+ *
+ * Priority:
+ *   1. `config.discovery.appDir` — explicit override (absolute or relative to cwd)
+ *   2. `src/app` — default for `create-next-app` projects
+ *   3. `app` — legacy / bare Next.js layout
+ */
+export function detectAppDir(): string {
+  const srcApp = path.join(process.cwd(), "src", "app");
+  if (fs.existsSync(srcApp)) return srcApp;
+  return path.join(process.cwd(), "app");
+}
+
+export function resolveAppDir(config: AIMeConfig): string {
+  if (config.discovery.appDir) {
+    return path.resolve(process.cwd(), config.discovery.appDir);
+  }
+  return detectAppDir();
+}
+
+/**
  * Create an AI-Me API route handler for Next.js App Router.
  *
  * Usage:
@@ -20,21 +43,25 @@ import { filterRoutes } from "./filter.js";
  *   export { handler as GET, handler as POST };
  */
 export function createAIMeHandler(config: AIMeConfig) {
+  // Resolve the app directory once at handler-creation time so both the
+  // /tools endpoint and handleChat use the same value.
+  const appDir = resolveAppDir(config);
+
   // Discover tools at initialization time
   let toolDefinitions: AIMeToolDefinition[] | null = null;
   let toolsPromise: Promise<AIMeToolDefinition[]> | null = null;
 
-  async function getToolDefinitions(appDir: string): Promise<AIMeToolDefinition[]> {
+  async function getToolDefinitions(): Promise<AIMeToolDefinition[]> {
     if (toolDefinitions) return toolDefinitions;
     if (toolsPromise) return toolsPromise;
 
-    toolsPromise = initTools(appDir);
+    toolsPromise = initTools();
     toolDefinitions = await toolsPromise;
     toolsPromise = null;
     return toolDefinitions;
   }
 
-  async function initTools(appDir: string): Promise<AIMeToolDefinition[]> {
+  async function initTools(): Promise<AIMeToolDefinition[]> {
     if (config.discovery.mode === "openapi") {
       let spec: OpenAPISpec;
       if (config.discovery.spec) {
@@ -69,24 +96,28 @@ export function createAIMeHandler(config: AIMeConfig) {
   }
 
   async function handler(req: Request): Promise<Response> {
-    // Auth check
+    const url = new URL(req.url);
+
+    // Health check — always public, no auth required
+    if (req.method === "GET" && url.pathname.endsWith("/health")) {
+      return Response.json({ status: "ok" });
+    }
+
+    // Auth check — everything else requires a session
     const session = await config.getSession(req);
     if (!session) {
       return new Response("Unauthorized", { status: 401 });
     }
 
-    const url = new URL(req.url);
-
     // Route: GET /api/ai-me/tools — list available tools (debug)
     if (req.method === "GET" && url.pathname.endsWith("/tools")) {
-      const appDir = process.cwd() + "/app";
       let tools: AIMeToolDefinition[];
       try {
-        tools = await getToolDefinitions(appDir);
+        tools = await getToolDefinitions();
       } catch (error) {
-        return new Response(
-          JSON.stringify({ error: error instanceof Error ? error.message : "Tool discovery failed" }),
-          { status: 500, headers: { "Content-Type": "application/json" } },
+        return Response.json(
+          { error: error instanceof Error ? error.message : "Tool discovery failed" },
+          { status: 500 },
         );
       }
       return Response.json(
@@ -100,14 +131,9 @@ export function createAIMeHandler(config: AIMeConfig) {
       );
     }
 
-    // Route: GET /api/ai-me/health
-    if (req.method === "GET" && url.pathname.endsWith("/health")) {
-      return Response.json({ status: "ok", version: "0.0.1" });
-    }
-
     // Route: POST /api/ai-me (chat)
     if (req.method === "POST") {
-      return handleChat(req, config, session, getToolDefinitions);
+      return handleChat(req, config, session, getToolDefinitions, url.origin);
     }
 
     return new Response("Not Found", { status: 404 });
@@ -120,14 +146,36 @@ async function handleChat(
   req: Request,
   config: AIMeConfig,
   session: NonNullable<Awaited<ReturnType<AIMeConfig["getSession"]>>>,
-  getToolDefinitions: (appDir: string) => Promise<AIMeToolDefinition[]>,
+  getToolDefinitions: () => Promise<AIMeToolDefinition[]>,
+  baseUrl: string,
 ): Promise<Response> {
-  const { messages }: { messages: UIMessage[] } = await req.json();
-  const appDir = process.cwd() + "/app";
-  const toolDefs = await getToolDefinitions(appDir);
+  // Parse and validate request body
+  let body: { messages?: unknown };
+  try {
+    body = await req.json();
+  } catch {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
 
-  // Build execution context with forwarded auth headers
-  const baseUrl = new URL(req.url).origin;
+  const { messages } = body;
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return Response.json({ error: "messages must be a non-empty array" }, { status: 400 });
+  }
+
+  // Validate each message has required UIMessage fields
+  for (const msg of messages) {
+    if (!msg.id || !msg.role) {
+      return Response.json(
+        {
+          error: "Each message must have an 'id' and 'role' field. Use the AI SDK UIMessage format.",
+          received: Object.keys(msg),
+        },
+        { status: 400 },
+      );
+    }
+  }
+
+  const toolDefs = await getToolDefinitions();
   const executionContext: ExecutionContext = {
     baseUrl,
     headers: {
@@ -140,17 +188,16 @@ async function handleChat(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const aiTools: Record<string, any> = {};
   for (const toolDef of toolDefs) {
-    const def = toolDef; // capture for closure
-    aiTools[def.name] = tool({
-      description: def.description,
+    aiTools[toolDef.name] = tool({
+      description: toolDef.description,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      inputSchema: def.parameters as any,
+      inputSchema: toolDef.parameters as any,
       // Disable strict schema validation for OpenAI-compatible providers
       // (e.g., Groq) that reject additionalProperties in tool schemas
       strict: false,
       execute: async (params: Record<string, unknown>) => {
         const result = await executeTool(
-          def,
+          toolDef,
           params,
           executionContext,
         );
@@ -159,7 +206,7 @@ async function handleChat(
     });
   }
 
-  const modelMessages = await convertToModelMessages(messages);
+  const modelMessages = await convertToModelMessages(messages as UIMessage[]);
 
   // Limit history if configured
   const maxHistory = config.maxHistoryMessages ?? 20;
@@ -168,11 +215,16 @@ async function handleChat(
       ? modelMessages.slice(-maxHistory)
       : modelMessages;
 
+  // Resolve system prompt — supports static string or async function
+  const defaultPrompt = `You are an AI assistant for this application. You can help users query data and perform actions. User: ${session.user.id}${session.user.role ? ` (role: ${session.user.role})` : ""}`;
+  const systemPromptValue =
+    typeof config.systemPrompt === "function"
+      ? await config.systemPrompt(session)
+      : config.systemPrompt ?? defaultPrompt;
+
   const result = streamText({
     model: config.model,
-    system:
-      config.systemPrompt ??
-      `You are an AI assistant for this application. You can help users query data and perform actions. User: ${session.user.id}${session.user.role ? ` (role: ${session.user.role})` : ""}`,
+    system: systemPromptValue,
     messages: trimmedMessages,
     tools: aiTools,
     stopWhen: stepCountIs(5),

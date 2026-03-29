@@ -12,6 +12,7 @@ const navLinks = [
   { href: "/hooks", label: "Hooks" },
   { href: "/configuration", label: "Configuration" },
   { href: "/api-reference", label: "API Reference" },
+  { href: "/cloud", label: "Cloud Dashboard" },
 ];
 
 export default function RootLayout({ children }: { children: ReactNode }) {

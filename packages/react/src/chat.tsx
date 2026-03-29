@@ -1,9 +1,30 @@
 import { useState, useRef, useEffect, useCallback, useId } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useAIMe } from "./use-ai-me.js";
 import { defaultThemeVars, themeToVars } from "./styles.js";
 import type { AIMeTheme } from "./styles.js";
 import { renderMarkdown } from "./markdown.js";
+
+/** Tool execution result passed to onToolComplete */
+export interface ToolCompleteEvent {
+  /** Tool (function) name */
+  name: string;
+  /** HTTP method used, if available from the tool result */
+  httpMethod?: string;
+  /** API path called, if available from the tool result */
+  path?: string;
+  /** Raw result returned by the tool */
+  result: unknown;
+  /** Whether the tool required user confirmation */
+  requiresConfirmation?: boolean;
+}
+
+/** Completed assistant message passed to onMessageComplete */
+export interface MessageCompleteEvent {
+  role: string;
+  content: string;
+  toolCalls?: unknown[];
+}
 
 export interface AIMeChatProps {
   /** Position of chat panel */
@@ -18,6 +39,59 @@ export interface AIMeChatProps {
   defaultOpen?: boolean;
   /** Callback when chat opens/closes */
   onToggle?: (open: boolean) => void;
+  /**
+   * Fired after each tool execution completes (after the API call returns).
+   * Use this to trigger client-side data refreshes when the AI mutates data.
+   */
+  onToolComplete?: (tool: ToolCompleteEvent) => void;
+  /**
+   * Fired when the assistant finishes a full response (status transitions
+   * from "streaming" to "ready").
+   */
+  onMessageComplete?: (message: MessageCompleteEvent) => void;
+  /**
+   * Custom renderer for the tool confirmation dialog.
+   *
+   * When provided, AI-Me will call this function instead of showing the
+   * default confirmation UI. Return any React node — a modal, an inline
+   * card, a drawer, etc.
+   *
+   * If not provided, the built-in `<AIMeConfirm>` dialog is used.
+   *
+   * @example
+   * ```tsx
+   * <AIMeChat
+   *   renderConfirmation={({ tool, params, onConfirm, onCancel }) => (
+   *     <MyCustomConfirmDialog
+   *       title={`Run ${tool.name}?`}
+   *       description={tool.description}
+   *       params={params}
+   *       onConfirm={onConfirm}
+   *       onCancel={onCancel}
+   *     />
+   *   )}
+   * />
+   * ```
+   */
+  renderConfirmation?: (props: {
+    /** Metadata about the tool that is about to be executed */
+    tool: {
+      /** Tool (function) name */
+      name: string;
+      /** HTTP method the tool maps to, e.g. "POST" */
+      httpMethod: string;
+      /** API path the tool will call, e.g. "/api/projects" */
+      path: string;
+      /** Human-readable description of what the tool does */
+      description: string;
+    };
+    /** Resolved parameters the tool will be called with */
+    params: Record<string, unknown>;
+    /** Call to proceed with the tool execution */
+    onConfirm: () => void;
+    /** Call to abort without executing the tool */
+    onCancel: () => void;
+  }) => ReactNode;
 }
 
 /** Visually hidden but accessible to screen readers */
@@ -40,12 +114,18 @@ export function AIMeChat({
   suggestedPrompts,
   defaultOpen = false,
   onToggle,
+  onToolComplete,
+  onMessageComplete,
 }: AIMeChatProps) {
   const [open, setOpen] = useState(defaultOpen);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  // Track tool-result part IDs that have already fired onToolComplete
+  const firedToolResults = useRef<Set<string>>(new Set());
+  // Track the previous status to detect the streaming → ready transition
+  const prevStatus = useRef<string | null>(null);
   const {
     messages,
     input,
@@ -84,6 +164,60 @@ export function AIMeChat({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Fire onToolComplete for each new tool-result part observed in messages.
+  // We deduplicate by tracking the tool-call ID so the callback fires exactly
+  // once per tool execution, even across re-renders during streaming.
+  useEffect(() => {
+    if (!onToolComplete) return;
+    for (const message of messages) {
+      for (const part of message.parts) {
+        if (part.type !== "tool-result") continue;
+        // Each tool-result part has a stable toolCallId
+        const id = (part as { toolCallId?: string }).toolCallId;
+        const dedupeKey = id ?? `${message.id}:${part.type}`;
+        if (firedToolResults.current.has(dedupeKey)) continue;
+        firedToolResults.current.add(dedupeKey);
+        onToolComplete({
+          name: (part as { toolName?: string }).toolName ?? "",
+          result: (part as { result?: unknown }).result,
+        });
+      }
+    }
+  }, [messages, onToolComplete]);
+
+  // Fire onMessageComplete when status transitions from streaming → ready.
+  // prevStatus tracks the last seen status so we only fire on the transition.
+  useEffect(() => {
+    const prev = prevStatus.current;
+    prevStatus.current = status;
+
+    if (!onMessageComplete) return;
+    // Only fire on the transition away from an active streaming state
+    if (status !== "ready") return;
+    if (prev !== "streaming" && prev !== "submitted") return;
+
+    // Find the last assistant message
+    // Walk backwards to find the most recent assistant message without copying the array
+    let lastAssistant: (typeof messages)[number] | undefined;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "assistant") { lastAssistant = messages[i]; break; }
+    }
+    if (!lastAssistant) return;
+
+    const textContent = lastAssistant.parts
+      .filter((p) => p.type === "text")
+      .map((p) => (p as { text: string }).text)
+      .join("");
+
+    const toolCalls: unknown[] = lastAssistant.parts.filter((p) => p.type === "tool-call");
+
+    onMessageComplete({
+      role: lastAssistant.role,
+      content: textContent,
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+    });
+  }, [status, messages, onMessageComplete]);
 
   // Focus panel when opened; return focus to trigger when closed
   useEffect(() => {
@@ -163,7 +297,8 @@ export function AIMeChat({
         bottom: 24,
         ...(position === "bottom-right" ? { right: 24 } : { left: 24 }),
         width: 380,
-        maxHeight: "70vh",
+        height: "70vh",
+        maxHeight: 600,
         display: open ? "flex" : "none",
         flexDirection: "column",
         fontFamily: "var(--ai-me-font)",

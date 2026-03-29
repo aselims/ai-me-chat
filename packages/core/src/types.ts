@@ -12,8 +12,8 @@ export interface AIMeConfig {
   /** Get the current user session from the request */
   getSession: (req: Request) => Promise<AIMeSession | null>;
 
-  /** System prompt prepended to all conversations */
-  systemPrompt?: string;
+  /** System prompt prepended to all conversations. Pass a function to inject user-specific context. */
+  systemPrompt?: string | ((session: AIMeSession) => string | Promise<string>);
 
   /** Confirmation settings for write operations */
   confirmation?: ConfirmationConfig;
@@ -30,6 +30,12 @@ export interface AIMeConfig {
 
 export interface DiscoveryConfig {
   mode: "filesystem" | "openapi";
+  /**
+   * Absolute or relative path to the Next.js app directory.
+   * Defaults to auto-detection: prefers `src/app` when it exists, falls back to `app`.
+   * Only used when mode is "filesystem".
+   */
+  appDir?: string;
   /** Glob patterns of routes to include */
   include?: string[];
   /** Glob patterns of routes to exclude */
