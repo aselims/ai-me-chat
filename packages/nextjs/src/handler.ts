@@ -232,5 +232,33 @@ async function handleChat(
     ...(config.providerOptions ? { providerOptions: config.providerOptions as any } : {}),
   });
 
-  return result.toUIMessageStreamResponse();
+  const response = result.toUIMessageStreamResponse();
+
+  // Strip reasoning events (reasoning-start, reasoning-end) from the SSE stream.
+  // Some providers (e.g. Groq) emit these even when not requested, and they cause
+  // the AI SDK client to create empty message parts that break rendering.
+  if (!response.body) return response;
+  const transform = new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      const text = new TextDecoder().decode(chunk);
+      const lines = text.split("\n");
+      const filtered = lines.filter((line) => {
+        if (!line.startsWith("data: ")) return true;
+        try {
+          const data = JSON.parse(line.slice(6));
+          return data.type !== "reasoning-start" && data.type !== "reasoning-end";
+        } catch {
+          return true;
+        }
+      });
+      if (filtered.length > 0) {
+        controller.enqueue(new TextEncoder().encode(filtered.join("\n")));
+      }
+    },
+  });
+
+  return new Response(response.body.pipeThrough(transform), {
+    headers: response.headers,
+    status: response.status,
+  });
 }

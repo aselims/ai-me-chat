@@ -503,40 +503,47 @@ export function AIMeChat({
             </div>
           )}
 
-          {messages.map((m) => (
-            <div
-              key={m.id}
-              style={{
-                alignSelf: m.role === "user" ? "flex-end" : "flex-start",
-                maxWidth: "85%",
-                padding: "8px 12px",
-                borderRadius: 8,
-                backgroundColor:
-                  m.role === "user"
-                    ? "var(--ai-me-primary)"
-                    : "var(--ai-me-bg-secondary)",
-                color: m.role === "user" ? "#fff" : "var(--ai-me-text)",
-                fontSize: 14,
-                lineHeight: 1.5,
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-word",
-              }}
-            >
-              {/* Screen reader role prefix */}
-              <span style={srOnly}>
-                {m.role === "user" ? "You: " : "Assistant: "}
-              </span>
-              {m.parts.map((p, i) =>
-                p.type === "text" ? (
-                  <span key={i}>
-                    {m.role === "assistant"
-                      ? renderMarkdown(p.text)
-                      : p.text}
-                  </span>
-                ) : null,
-              )}
-            </div>
-          ))}
+          {messages.map((m) => {
+            // Skip messages that have no renderable content (e.g. reasoning-only messages
+            // from providers like Groq that emit reasoning tokens).
+            const hasTextContent = m.parts.some((p) => p.type === "text");
+            if (!hasTextContent && m.role === "assistant") return null;
+
+            return (
+              <div
+                key={m.id}
+                style={{
+                  alignSelf: m.role === "user" ? "flex-end" : "flex-start",
+                  maxWidth: "85%",
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  backgroundColor:
+                    m.role === "user"
+                      ? "var(--ai-me-primary)"
+                      : "var(--ai-me-bg-secondary)",
+                  color: m.role === "user" ? "#fff" : "var(--ai-me-text)",
+                  fontSize: 14,
+                  lineHeight: 1.5,
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                }}
+              >
+                {/* Screen reader role prefix */}
+                <span style={srOnly}>
+                  {m.role === "user" ? "You: " : "Assistant: "}
+                </span>
+                {m.parts.map((p, i) =>
+                  p.type === "text" ? (
+                    <span key={i}>
+                      {m.role === "assistant"
+                        ? renderMarkdown(p.text)
+                        : p.text}
+                    </span>
+                  ) : null,
+                )}
+              </div>
+            );
+          })}
 
           {/* "Thinking" indicator — announced by the live region above */}
           {status === "submitted" && (
