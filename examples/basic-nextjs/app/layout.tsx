@@ -1,16 +1,14 @@
-import { Providers } from "./providers";
+import "./globals.css";
 
 export const metadata = {
-  title: "AI-Me Example",
-  description: "AI-Me copilot plugin example app",
+  title: "Task Tracker — AI-Me Demo",
+  description: "Demo app showcasing AI-Me copilot plugin capabilities",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>
-        <Providers>{children}</Providers>
-      </body>
+      <body>{children}</body>
     </html>
   );
 }
