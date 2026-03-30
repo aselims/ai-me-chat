@@ -1,5 +1,11 @@
 # @ai-me-chat/react
 
+## 0.2.1
+
+### Patch Changes
+
+- Fix empty message rendering caused by Groq reasoning tokens (reasoning-start/reasoning-end SSE events).
+
 ## 0.2.0
 
 ### Minor Changes

@@ -1,6 +1,6 @@
 {
   "name": "@ai-me-chat/core",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "AI-Me core — framework-agnostic AI copilot engine with tool discovery, schema extraction, and OpenAPI support",
   "license": "MIT",
   "keywords": [
