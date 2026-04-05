@@ -195,6 +195,8 @@ async function handleChat(
       // Disable strict schema validation for OpenAI-compatible providers
       // (e.g., Groq) that reject additionalProperties in tool schemas
       strict: false,
+      // AI SDK pauses and emits an approval request the client must resolve
+      needsApproval: toolDef.requiresConfirmation,
       execute: async (params: Record<string, unknown>) => {
         const result = await executeTool(
           toolDef,

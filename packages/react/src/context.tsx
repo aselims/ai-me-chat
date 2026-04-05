@@ -19,6 +19,11 @@ export interface AIMeContextValue {
    * without the AI making an API call directly.
    */
   onAction?: (action: AIMeAction) => void;
+  /**
+   * Timeout in milliseconds before auto-recovering from a stuck "submitted"
+   * state. Set to 0 to disable. Default: 30000 (30 seconds).
+   */
+  stuckTimeout?: number;
 }
 
 export const AIMeContext = createContext<AIMeContextValue | null>(null);

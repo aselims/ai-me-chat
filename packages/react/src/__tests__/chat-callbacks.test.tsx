@@ -36,6 +36,7 @@ function makeUseAIMeReturn(overrides: Partial<ReturnType<typeof mockUseAIMe>> = 
     stop: vi.fn(),
     setMessages: vi.fn(),
     clearMessages: vi.fn(),
+    addToolApprovalResponse: vi.fn(),
     ...overrides,
   };
 }
@@ -358,6 +359,113 @@ describe("AIMeChat callbacks", () => {
       });
 
       expect(onMessageComplete).not.toHaveBeenCalled();
+    });
+  });
+
+  // ------------------------------------------------------------------
+  // confirmation rendering
+  // ------------------------------------------------------------------
+  describe("confirmation rendering", () => {
+    it("renders AIMeConfirm for pending tool-call without tool-result", () => {
+      const messages = [
+        {
+          id: "m1",
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-call",
+              toolCallId: "tc1",
+              toolName: "delete_item",
+              args: { id: "123" },
+            },
+          ],
+        },
+      ];
+      mockUseAIMe.mockReturnValue(
+        makeUseAIMeReturn({
+          messages,
+          addToolApprovalResponse: vi.fn(),
+        }),
+      );
+
+      const { container } = render(<AIMeChat position="inline" />);
+
+      const dialog = container.querySelector('[role="alertdialog"]');
+      expect(dialog).not.toBeNull();
+    });
+
+    it("does not render confirmation when tool-call has matching tool-result", () => {
+      const messages = [
+        {
+          id: "m1",
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-call",
+              toolCallId: "tc1",
+              toolName: "list_items",
+              args: {},
+            },
+            {
+              type: "tool-result",
+              toolCallId: "tc1",
+              toolName: "list_items",
+              result: [],
+            },
+          ],
+        },
+      ];
+      mockUseAIMe.mockReturnValue(
+        makeUseAIMeReturn({
+          messages,
+          addToolApprovalResponse: vi.fn(),
+        }),
+      );
+
+      const { container } = render(<AIMeChat position="inline" />);
+
+      const dialog = container.querySelector('[role="alertdialog"]');
+      expect(dialog).toBeNull();
+    });
+
+    it("uses renderConfirmation prop when provided", () => {
+      const messages = [
+        {
+          id: "m1",
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-call",
+              toolCallId: "tc1",
+              toolName: "delete_item",
+              args: { id: "456" },
+            },
+          ],
+        },
+      ];
+      mockUseAIMe.mockReturnValue(
+        makeUseAIMeReturn({
+          messages,
+          addToolApprovalResponse: vi.fn(),
+        }),
+      );
+
+      const renderConfirmation = vi.fn().mockReturnValue(
+        <div data-testid="custom-confirm">Custom</div>,
+      );
+
+      const { getByTestId } = render(
+        <AIMeChat position="inline" renderConfirmation={renderConfirmation} />,
+      );
+
+      expect(renderConfirmation).toHaveBeenCalledOnce();
+      expect(getByTestId("custom-confirm")).toBeDefined();
+
+      const call = renderConfirmation.mock.calls[0][0];
+      expect(call.tool.name).toBe("delete_item");
+      expect(call.params).toEqual({ id: "456" });
+      expect(typeof call.onConfirm).toBe("function");
+      expect(typeof call.onCancel).toBe("function");
     });
   });
 

@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect, useCallback, useId } from "react";
+import { useState, useRef, useEffect, useCallback, useId, useMemo, Fragment } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { useAIMe } from "./use-ai-me.js";
 import { defaultThemeVars, themeToVars } from "./styles.js";
 import type { AIMeTheme } from "./styles.js";
 import { renderMarkdown } from "./markdown.js";
+import { AIMeConfirm } from "./confirm.js";
 
 /** Tool execution result passed to onToolComplete */
 export interface ToolCompleteEvent {
@@ -49,6 +50,8 @@ export interface AIMeChatProps {
    * from "streaming" to "ready").
    */
   onMessageComplete?: (message: MessageCompleteEvent) => void;
+  /** Custom icon for the floating trigger button. Defaults to a sparkle/AI SVG. */
+  triggerIcon?: ReactNode;
   /**
    * Custom renderer for the tool confirmation dialog.
    *
@@ -107,6 +110,16 @@ const srOnly: CSSProperties = {
   borderWidth: 0,
 };
 
+/** Default sparkle/AI icon for the floating trigger button. */
+function DefaultAIIcon() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5Z" />
+      <path d="M19 11l.75 2.25L22 14l-2.25.75L19 17l-.75-2.25L16 14l2.25-.75Z" />
+    </svg>
+  );
+}
+
 export function AIMeChat({
   position = "bottom-right",
   theme,
@@ -116,6 +129,8 @@ export function AIMeChat({
   onToggle,
   onToolComplete,
   onMessageComplete,
+  triggerIcon,
+  renderConfirmation,
 }: AIMeChatProps) {
   const [open, setOpen] = useState(defaultOpen);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -134,6 +149,7 @@ export function AIMeChat({
     status,
     error,
     setInput,
+    addToolApprovalResponse,
   } = useAIMe();
 
   // Stable IDs for aria-labelledby / aria-describedby
@@ -272,6 +288,28 @@ export function AIMeChat({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [open, isInline, toggleOpen]);
 
+  // Pending tool calls: tool-call parts without a matching tool-result (awaiting approval)
+  const pendingToolCalls = useMemo(() => {
+    const resultIds = new Set<string>();
+    const toolCalls: Array<{
+      toolCallId: string;
+      toolName: string;
+      args: Record<string, unknown>;
+    }> = [];
+
+    for (const m of messages) {
+      for (const p of m.parts) {
+        if (p.type === "tool-result") {
+          resultIds.add((p as { toolCallId: string }).toolCallId);
+        } else if (p.type === "tool-call") {
+          toolCalls.push(p as unknown as { toolCallId: string; toolName: string; args: Record<string, unknown> });
+        }
+      }
+    }
+
+    return toolCalls.filter((tc) => !resultIds.has(tc.toolCallId));
+  }, [messages]);
+
   const themeVars: CSSProperties = {
     ...defaultThemeVars,
     ...themeToVars(theme),
@@ -346,7 +384,7 @@ export function AIMeChat({
         type="button"
       >
         {/* Icon is decorative; label is on the button */}
-        <span aria-hidden="true">💬</span>
+        <span aria-hidden="true">{triggerIcon ?? <DefaultAIIcon />}</span>
       </button>
 
       {/* Chat panel */}
@@ -659,6 +697,37 @@ export function AIMeChat({
           </button>
         </form>
       </div>
+
+      {/* Confirmation dialogs for pending tool calls */}
+      {pendingToolCalls.map((tc) => {
+        const onConfirm = () => addToolApprovalResponse({ id: tc.toolCallId, approved: true });
+        const onCancel = () => addToolApprovalResponse({ id: tc.toolCallId, approved: false, reason: "User cancelled" });
+
+        return renderConfirmation ? (
+          <Fragment key={tc.toolCallId}>
+            {renderConfirmation({
+              tool: {
+                name: tc.toolName,
+                httpMethod: "",
+                path: "",
+                description: tc.toolName,
+              },
+              params: tc.args,
+              onConfirm,
+              onCancel,
+            })}
+          </Fragment>
+        ) : (
+          <AIMeConfirm
+            key={tc.toolCallId}
+            action={tc.toolName}
+            description={`Execute ${tc.toolName}?`}
+            parameters={tc.args}
+            onConfirm={onConfirm}
+            onReject={onCancel}
+          />
+        );
+      })}
     </>
   );
 }

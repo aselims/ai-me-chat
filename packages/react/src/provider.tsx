@@ -30,13 +30,18 @@ export interface AIMeProviderProps {
    * ```
    */
   onAction?: (action: AIMeAction) => void;
+  /**
+   * Timeout in milliseconds before auto-recovering from a stuck "submitted"
+   * state. Set to 0 to disable. Default: 30000 (30 seconds).
+   */
+  stuckTimeout?: number;
   /** Child components */
   children: ReactNode;
 }
 
-export function AIMeProvider({ endpoint, headers, onAction, children }: AIMeProviderProps) {
+export function AIMeProvider({ endpoint, headers, onAction, stuckTimeout, children }: AIMeProviderProps) {
   return (
-    <AIMeContext value={{ endpoint, headers, onAction }}>
+    <AIMeContext value={{ endpoint, headers, onAction, stuckTimeout }}>
       {children}
     </AIMeContext>
   );

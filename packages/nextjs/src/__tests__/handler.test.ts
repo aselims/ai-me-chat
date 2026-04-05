@@ -323,6 +323,38 @@ describe("chat message validation", () => {
   });
 });
 
+describe("confirmation — needsApproval", () => {
+  it("sets needsApproval on tools whose HTTP method requires confirmation", async () => {
+    const handler = createAIMeHandler({
+      model: mockModel,
+      discovery: { mode: "openapi", spec: minimalSpec },
+      getSession: async () => ({ user: { id: "test-user" } }),
+      confirmation: { methods: ["POST", "DELETE"] },
+    });
+
+    const req = new Request("http://localhost:3000/api/ai-me/tools", {
+      method: "GET",
+    });
+    const res = await handler(req);
+    const tools = await res.json();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const byName = (name: string) => tools.find((t: any) => t.name === name);
+
+    // POST createItem should require confirmation
+    expect(byName("create_item").requiresConfirmation).toBe(true);
+
+    // DELETE deleteItem should require confirmation
+    expect(byName("delete_item").requiresConfirmation).toBe(true);
+
+    // GET listItems should NOT require confirmation
+    expect(byName("list_items").requiresConfirmation).toBe(false);
+
+    // GET getItem should NOT require confirmation
+    expect(byName("get_item").requiresConfirmation).toBe(false);
+  });
+});
+
 describe("dynamic system prompt", () => {
   it("accepts a function for systemPrompt", () => {
     // This should not throw — verifies the type accepts functions
