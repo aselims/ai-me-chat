@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useId, useMemo, Fragment } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { useAIMe } from "./use-ai-me.js";
+import { useAIMe, isToolPart, getToolName, TERMINAL_TOOL_STATES } from "./use-ai-me.js";
+import type { ToolPartLike } from "./use-ai-me.js";
 import { defaultThemeVars, themeToVars } from "./styles.js";
 import type { AIMeTheme } from "./styles.js";
 import { renderMarkdown } from "./markdown.js";
@@ -181,22 +182,26 @@ export function AIMeChat({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Fire onToolComplete for each new tool-result part observed in messages.
+  // Fire onToolComplete for each tool part that reaches a terminal state.
   // We deduplicate by tracking the tool-call ID so the callback fires exactly
   // once per tool execution, even across re-renders during streaming.
   useEffect(() => {
+    if (messages.length === 0) {
+      firedToolResults.current.clear();
+      return;
+    }
     if (!onToolComplete) return;
     for (const message of messages) {
       for (const part of message.parts) {
-        if (part.type !== "tool-result") continue;
-        // Each tool-result part has a stable toolCallId
-        const id = (part as { toolCallId?: string }).toolCallId;
-        const dedupeKey = id ?? `${message.id}:${part.type}`;
+        if (!isToolPart(part)) continue;
+        const tp = part as ToolPartLike;
+        if (!TERMINAL_TOOL_STATES.has(tp.state ?? "")) continue;
+        const dedupeKey = tp.toolCallId ?? `${message.id}:${part.type}`;
         if (firedToolResults.current.has(dedupeKey)) continue;
         firedToolResults.current.add(dedupeKey);
         onToolComplete({
-          name: (part as { toolName?: string }).toolName ?? "",
-          result: (part as { result?: unknown }).result,
+          name: getToolName(tp),
+          result: tp.output,
         });
       }
     }
@@ -226,7 +231,7 @@ export function AIMeChat({
       .map((p) => (p as { text: string }).text)
       .join("");
 
-    const toolCalls: unknown[] = lastAssistant.parts.filter((p) => p.type === "tool-call");
+    const toolCalls: unknown[] = lastAssistant.parts.filter((p) => isToolPart(p));
 
     onMessageComplete({
       role: lastAssistant.role,
@@ -288,26 +293,30 @@ export function AIMeChat({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [open, isInline, toggleOpen]);
 
-  // Pending tool calls: tool-call parts without a matching tool-result (awaiting approval)
+  // Pending tool calls: tool parts with state "approval-requested" (awaiting user decision)
   const pendingToolCalls = useMemo(() => {
-    const resultIds = new Set<string>();
-    const toolCalls: Array<{
+    const pending: Array<{
       toolCallId: string;
       toolName: string;
       args: Record<string, unknown>;
+      approvalId: string;
     }> = [];
 
     for (const m of messages) {
       for (const p of m.parts) {
-        if (p.type === "tool-result") {
-          resultIds.add((p as { toolCallId: string }).toolCallId);
-        } else if (p.type === "tool-call") {
-          toolCalls.push(p as unknown as { toolCallId: string; toolName: string; args: Record<string, unknown> });
-        }
+        if (!isToolPart(p)) continue;
+        const tp = p as ToolPartLike;
+        if (tp.state !== "approval-requested") continue;
+        pending.push({
+          toolCallId: tp.toolCallId!,
+          toolName: getToolName(tp),
+          args: (tp.input ?? {}) as Record<string, unknown>,
+          approvalId: tp.approval?.id ?? tp.toolCallId!,
+        });
       }
     }
 
-    return toolCalls.filter((tc) => !resultIds.has(tc.toolCallId));
+    return pending;
   }, [messages]);
 
   const themeVars: CSSProperties = {
@@ -542,10 +551,12 @@ export function AIMeChat({
           )}
 
           {messages.map((m) => {
-            // Skip messages that have no renderable content (e.g. reasoning-only messages
-            // from providers like Groq that emit reasoning tokens).
+            // Skip assistant messages that have no renderable content (e.g.
+            // reasoning-only messages from Groq), but keep messages that
+            // contain tool parts — they're rendered via the confirmation UI.
             const hasTextContent = m.parts.some((p) => p.type === "text");
-            if (!hasTextContent && m.role === "assistant") return null;
+            const hasToolContent = m.parts.some((p) => isToolPart(p));
+            if (!hasTextContent && !hasToolContent && m.role === "assistant") return null;
 
             return (
               <div
@@ -700,8 +711,8 @@ export function AIMeChat({
 
       {/* Confirmation dialogs for pending tool calls */}
       {pendingToolCalls.map((tc) => {
-        const onConfirm = () => addToolApprovalResponse({ id: tc.toolCallId, approved: true });
-        const onCancel = () => addToolApprovalResponse({ id: tc.toolCallId, approved: false, reason: "User cancelled" });
+        const onConfirm = () => addToolApprovalResponse({ id: tc.approvalId, approved: true });
+        const onCancel = () => addToolApprovalResponse({ id: tc.approvalId, approved: false, reason: "User cancelled" });
 
         return renderConfirmation ? (
           <Fragment key={tc.toolCallId}>

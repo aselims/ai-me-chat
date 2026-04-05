@@ -13,9 +13,14 @@ import type { ToolCompleteEvent, MessageCompleteEvent } from "../chat.js";
 // ---------------------------------------------------------------------------
 const mockUseAIMe = vi.fn();
 
-vi.mock("../use-ai-me.js", () => ({
-  useAIMe: () => mockUseAIMe(),
-}));
+vi.mock("../use-ai-me.js", async (importOriginal) => {
+  // eslint-disable-next-line @typescript-eslint/consistent-type-imports
+  const actual = await importOriginal<typeof import("../use-ai-me.js")>();
+  return {
+    ...actual,
+    useAIMe: () => mockUseAIMe(),
+  };
+});
 
 // Import AFTER mock is established
 const { AIMeChat } = await import("../chat.js");
@@ -74,7 +79,7 @@ describe("AIMeChat callbacks", () => {
       expect(onToolComplete).not.toHaveBeenCalled();
     });
 
-    it("fires once per tool-result part", () => {
+    it("fires once per completed tool part", () => {
       const onToolComplete = vi.fn();
       const messages = [
         {
@@ -82,10 +87,12 @@ describe("AIMeChat callbacks", () => {
           role: "assistant",
           parts: [
             {
-              type: "tool-result",
+              type: "tool-createProject",
               toolCallId: "tc1",
               toolName: "createProject",
-              result: { id: 42 },
+              state: "output-available",
+              input: {},
+              output: { id: 42 },
             },
           ],
         },
@@ -103,7 +110,7 @@ describe("AIMeChat callbacks", () => {
       });
     });
 
-    it("fires for each distinct tool-result when multiple tools are called", () => {
+    it("fires for each distinct completed tool when multiple tools are called", () => {
       const onToolComplete = vi.fn();
       const messages = [
         {
@@ -111,16 +118,20 @@ describe("AIMeChat callbacks", () => {
           role: "assistant",
           parts: [
             {
-              type: "tool-result",
+              type: "tool-listProjects",
               toolCallId: "tc1",
               toolName: "listProjects",
-              result: [],
+              state: "output-available",
+              input: {},
+              output: [],
             },
             {
-              type: "tool-result",
+              type: "tool-createProject",
               toolCallId: "tc2",
               toolName: "createProject",
-              result: { id: 1 },
+              state: "output-available",
+              input: {},
+              output: { id: 1 },
             },
           ],
         },
@@ -142,10 +153,12 @@ describe("AIMeChat callbacks", () => {
           role: "assistant",
           parts: [
             {
-              type: "tool-result",
+              type: "tool-getUser",
               toolCallId: "tc1",
               toolName: "getUser",
-              result: { name: "Alice" },
+              state: "output-available",
+              input: {},
+              output: { name: "Alice" },
             },
           ],
         },
@@ -164,20 +177,22 @@ describe("AIMeChat callbacks", () => {
       expect(onToolComplete).toHaveBeenCalledOnce();
     });
 
-    it("fires for a new tool result added in a subsequent message", () => {
+    it("fires for a new completed tool added in a subsequent message", () => {
       const onToolComplete = vi.fn();
 
-      // Initial render — one tool result
+      // Initial render — one completed tool
       const initialMessages = [
         {
           id: "m1",
           role: "assistant",
           parts: [
             {
-              type: "tool-result",
+              type: "tool-tool1",
               toolCallId: "tc1",
               toolName: "tool1",
-              result: "r1",
+              state: "output-available",
+              input: {},
+              output: "r1",
             },
           ],
         },
@@ -190,7 +205,7 @@ describe("AIMeChat callbacks", () => {
 
       expect(onToolComplete).toHaveBeenCalledOnce();
 
-      // Second render — new tool result added
+      // Second render — new completed tool added
       const updatedMessages = [
         ...initialMessages,
         {
@@ -198,10 +213,12 @@ describe("AIMeChat callbacks", () => {
           role: "assistant",
           parts: [
             {
-              type: "tool-result",
+              type: "tool-tool2",
               toolCallId: "tc2",
               toolName: "tool2",
-              result: "r2",
+              state: "output-available",
+              input: {},
+              output: "r2",
             },
           ],
         },
@@ -304,13 +321,15 @@ describe("AIMeChat callbacks", () => {
       expect(onMessageComplete).toHaveBeenCalledOnce();
     });
 
-    it("includes toolCalls when the message has tool-call parts", () => {
+    it("includes toolCalls when the message has tool parts", () => {
       const onMessageComplete = vi.fn();
       const toolCallPart = {
-        type: "tool-call",
+        type: "tool-createProject",
         toolCallId: "tc1",
         toolName: "createProject",
-        args: { name: "Acme" },
+        state: "output-available",
+        input: { name: "Acme" },
+        output: { id: 1 },
       };
       const messages = [
         {
@@ -366,17 +385,19 @@ describe("AIMeChat callbacks", () => {
   // confirmation rendering
   // ------------------------------------------------------------------
   describe("confirmation rendering", () => {
-    it("renders AIMeConfirm for pending tool-call without tool-result", () => {
+    it("renders AIMeConfirm for tool part with approval-requested state", () => {
       const messages = [
         {
           id: "m1",
           role: "assistant",
           parts: [
             {
-              type: "tool-call",
+              type: "tool-delete_item",
               toolCallId: "tc1",
               toolName: "delete_item",
-              args: { id: "123" },
+              state: "approval-requested",
+              input: { id: "123" },
+              approval: { id: "appr1" },
             },
           ],
         },
@@ -394,23 +415,19 @@ describe("AIMeChat callbacks", () => {
       expect(dialog).not.toBeNull();
     });
 
-    it("does not render confirmation when tool-call has matching tool-result", () => {
+    it("does not render confirmation when tool part has terminal state", () => {
       const messages = [
         {
           id: "m1",
           role: "assistant",
           parts: [
             {
-              type: "tool-call",
+              type: "tool-list_items",
               toolCallId: "tc1",
               toolName: "list_items",
-              args: {},
-            },
-            {
-              type: "tool-result",
-              toolCallId: "tc1",
-              toolName: "list_items",
-              result: [],
+              state: "output-available",
+              input: {},
+              output: [],
             },
           ],
         },
@@ -435,10 +452,12 @@ describe("AIMeChat callbacks", () => {
           role: "assistant",
           parts: [
             {
-              type: "tool-call",
+              type: "tool-delete_item",
               toolCallId: "tc1",
               toolName: "delete_item",
-              args: { id: "456" },
+              state: "approval-requested",
+              input: { id: "456" },
+              approval: { id: "appr1" },
             },
           ],
         },
@@ -499,7 +518,7 @@ describe("AIMeChat callbacks", () => {
       const withTools: MessageCompleteEvent = {
         role: "assistant",
         content: "",
-        toolCalls: [{ type: "tool-call" }],
+        toolCalls: [{ type: "tool-createProject", toolCallId: "tc1", state: "output-available" }],
       };
       expect(withTools.toolCalls).toHaveLength(1);
     });

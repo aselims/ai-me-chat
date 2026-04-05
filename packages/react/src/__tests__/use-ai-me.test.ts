@@ -18,6 +18,7 @@ vi.mock("@ai-sdk/react", () => ({
 
 vi.mock("ai", () => ({
   DefaultChatTransport: vi.fn(),
+  lastAssistantMessageIsCompleteWithApprovalResponses: vi.fn(),
 }));
 
 vi.mock("../context.js", () => ({
@@ -116,14 +117,14 @@ describe("session restore resilience", () => {
     mockChat.messages = [];
   });
 
-  it("trims incomplete assistant message with tool-call but no tool-result on restore", () => {
+  it("trims incomplete assistant message with non-terminal tool part on restore", () => {
     const incompleteMessages = [
       { id: "m1", role: "user", parts: [{ type: "text", text: "Delete it" }] },
       {
         id: "m2",
         role: "assistant",
         parts: [
-          { type: "tool-call", toolCallId: "tc1", toolName: "delete_item", args: { id: "123" } },
+          { type: "tool-delete_item", toolCallId: "tc1", toolName: "delete_item", state: "approval-requested", input: { id: "123" }, approval: { id: "appr1" } },
         ],
       },
     ];
@@ -134,15 +135,14 @@ describe("session restore resilience", () => {
     expect(mockChat.setMessages).toHaveBeenCalledWith([incompleteMessages[0]]);
   });
 
-  it("keeps complete messages with both tool-call and tool-result on restore", () => {
+  it("keeps complete messages with terminal tool parts on restore", () => {
     const completeMessages = [
       { id: "m1", role: "user", parts: [{ type: "text", text: "List items" }] },
       {
         id: "m2",
         role: "assistant",
         parts: [
-          { type: "tool-call", toolCallId: "tc1", toolName: "list_items", args: {} },
-          { type: "tool-result", toolCallId: "tc1", toolName: "list_items", result: [] },
+          { type: "tool-list_items", toolCallId: "tc1", toolName: "list_items", state: "output-available", input: {}, output: [] },
           { type: "text", text: "Here are your items." },
         ],
       },

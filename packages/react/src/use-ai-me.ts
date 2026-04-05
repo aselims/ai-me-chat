@@ -1,5 +1,8 @@
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
+import {
+  DefaultChatTransport,
+  lastAssistantMessageIsCompleteWithApprovalResponses,
+} from "ai";
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useAIMeContext } from "./context.js";
 
@@ -13,22 +16,55 @@ export function cleanAssistantText(text: string): string {
   return text.replace(/<tools>[\s\S]*?<\/tools>/g, "").trim();
 }
 
+/** Shape of an AI SDK v6 tool invocation part (typed or dynamic). */
+export interface ToolPartLike {
+  type: string;
+  toolCallId?: string;
+  toolName?: string;
+  state?: string;
+  input?: unknown;
+  output?: unknown;
+  approval?: { id: string };
+}
+
 /**
- * Remove trailing assistant messages that have tool-call parts without
- * matching tool-result parts. These represent interrupted tool executions
- * that would cause the chat to start in a stuck state.
+ * Detect any tool invocation part.
+ *
+ * AI SDK v6 uses `type: "tool-{toolName}"` (e.g. `"tool-post_projects"`)
+ * or `type: "dynamic-tool"`. The reliable discriminator is `toolCallId`.
  */
-function trimIncompleteToolCalls<T extends { role: string; parts: Array<{ type: string }> }>(messages: T[]): T[] {
+export function isToolPart(p: ToolPartLike): boolean {
+  return p.toolCallId != null;
+}
+
+/** Extract the human-readable tool name from an AI SDK v6 part. */
+export function getToolName(p: ToolPartLike): string {
+  return p.toolName ?? p.type.replace(/^tool-/, "");
+}
+
+/** Terminal tool states — the tool execution has finished one way or another. */
+export const TERMINAL_TOOL_STATES = new Set([
+  "output-available",
+  "output-denied",
+  "output-error",
+]);
+
+/**
+ * Remove trailing assistant messages that have non-terminal tool parts
+ * (e.g. `state: "approval-requested"`). These represent interrupted tool
+ * executions that would cause the chat to start in a stuck state.
+ */
+function trimIncompleteToolCalls<T extends { role: string; parts: ToolPartLike[] }>(messages: T[]): T[] {
   if (messages.length === 0) return messages;
 
   const last = messages[messages.length - 1];
   if (last.role !== "assistant") return messages;
 
-  const hasToolCall = last.parts.some((p) => p.type === "tool-call");
-  const hasToolResult = last.parts.some((p) => p.type === "tool-result");
-
-  if (hasToolCall && !hasToolResult) {
-    return messages.slice(0, -1);
+  for (const p of last.parts) {
+    if (!isToolPart(p)) continue;
+    if (!TERMINAL_TOOL_STATES.has(p.state ?? "")) {
+      return messages.slice(0, -1);
+    }
   }
 
   return messages;
@@ -50,6 +86,9 @@ export function useAIMe() {
       api: endpoint,
       headers,
     }),
+    // Auto-resume the conversation after the user approves/denies all
+    // pending tool calls — no manual sendMessage() needed.
+    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
   });
 
   // Some open-source models emit <tools>...</tools> as plain text instead of
