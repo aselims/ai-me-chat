@@ -1,5 +1,12 @@
 # basic-nextjs-example
 
+## 0.0.4
+
+### Patch Changes
+
+- Updated dependencies
+  - @ai-me-chat/react@0.3.1
+
 ## 0.0.3
 
 ### Patch Changes
