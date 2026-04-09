@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { NextRequest } from "next/server";
 import { getDb } from "@/lib/db";
 import { getTask, updateTask, deleteTask } from "@/lib/services/tasks";
+import { getSession } from "@/lib/auth";
 
 export const bodySchema = z.object({
   title: z.string().optional(),
@@ -15,6 +16,11 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string; taskId: string }> }
 ) {
+  const session = await getSession();
+  if (!session) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { taskId } = await params;
   const db = getDb();
   const task = getTask(db, taskId);
@@ -30,10 +36,29 @@ export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; taskId: string }> }
 ) {
+  const session = await getSession();
+  if (!session) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  let raw: unknown;
+  try {
+    raw = await req.json();
+  } catch {
+    return Response.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  const parsed = bodySchema.safeParse(raw);
+  if (!parsed.success) {
+    return Response.json(
+      { error: "Validation failed", details: parsed.error.flatten() },
+      { status: 400 }
+    );
+  }
+
   const { taskId } = await params;
-  const body = await req.json();
   const db = getDb();
-  const task = updateTask(db, taskId, body);
+  const task = updateTask(db, taskId, parsed.data);
 
   if (!task) {
     return Response.json({ error: "Not found" }, { status: 404 });
@@ -46,6 +71,11 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string; taskId: string }> }
 ) {
+  const session = await getSession();
+  if (!session) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { taskId } = await params;
   const db = getDb();
   const deleted = deleteTask(db, taskId);

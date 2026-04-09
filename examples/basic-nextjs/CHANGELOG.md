@@ -5,7 +5,9 @@
 ### Patch Changes
 
 - Updated dependencies
-  - @ai-me-chat/react@0.3.1
+  - @ai-me-chat/core@0.4.0
+  - @ai-me-chat/nextjs@0.4.0
+  - @ai-me-chat/react@0.4.0
 
 ## 0.0.3
 

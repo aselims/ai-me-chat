@@ -1,5 +1,11 @@
 # @ai-me-chat/core
 
+## 0.4.0
+
+### Minor Changes
+
+- Fix tool part detection for AI SDK v6 format and remove unused exports
+
 ## 0.2.0
 
 ### Minor Changes

@@ -1,6 +1,6 @@
 {
   "name": "@ai-me-chat/nextjs",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "AI-Me Next.js integration — route handler factory, auto-discovery, and proxy",
   "license": "MIT",
   "keywords": [

@@ -22,12 +22,14 @@ import { filterRoutes } from "./filter.js";
  *   2. `src/app` — default for `create-next-app` projects
  *   3. `app` — legacy / bare Next.js layout
  */
+/** @internal Exported for testing only — not part of the public API. */
 export function detectAppDir(): string {
   const srcApp = path.join(process.cwd(), "src", "app");
   if (fs.existsSync(srcApp)) return srcApp;
   return path.join(process.cwd(), "app");
 }
 
+/** @internal Exported for testing only — not part of the public API. */
 export function resolveAppDir(config: AIMeConfig): string {
   if (config.discovery.appDir) {
     return path.resolve(process.cwd(), config.discovery.appDir);
