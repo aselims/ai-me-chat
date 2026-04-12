@@ -128,7 +128,7 @@ describe("session restore resilience", () => {
         ],
       },
     ];
-    sessionStorage.setItem("ai-me-messages", JSON.stringify(incompleteMessages));
+    sessionStorage.setItem("ai-me-messages:/api/ai-me", JSON.stringify(incompleteMessages));
 
     renderHook(() => useAIMe());
 
@@ -147,7 +147,7 @@ describe("session restore resilience", () => {
         ],
       },
     ];
-    sessionStorage.setItem("ai-me-messages", JSON.stringify(completeMessages));
+    sessionStorage.setItem("ai-me-messages:/api/ai-me", JSON.stringify(completeMessages));
 
     renderHook(() => useAIMe());
 
@@ -159,7 +159,7 @@ describe("session restore resilience", () => {
       { id: "m1", role: "user", parts: [{ type: "text", text: "Hi" }] },
       { id: "m2", role: "assistant", parts: [{ type: "text", text: "Hello!" }] },
     ];
-    sessionStorage.setItem("ai-me-messages", JSON.stringify(textOnlyMessages));
+    sessionStorage.setItem("ai-me-messages:/api/ai-me", JSON.stringify(textOnlyMessages));
 
     renderHook(() => useAIMe());
 

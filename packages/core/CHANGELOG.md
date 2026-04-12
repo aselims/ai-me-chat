@@ -1,5 +1,11 @@
 # @ai-me-chat/core
 
+## 0.5.0
+
+### Minor Changes
+
+- Add i18n label customization, dark mode support, multiline input, baseUrl configuration, and markdown table rendering
+
 ## 0.4.0
 
 ### Minor Changes

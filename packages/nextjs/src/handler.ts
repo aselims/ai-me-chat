@@ -135,7 +135,12 @@ export function createAIMeHandler(config: AIMeConfig) {
 
     // Route: POST /api/ai-me (chat)
     if (req.method === "POST") {
-      return handleChat(req, config, session, getToolDefinitions, url.origin);
+      // Use configured baseUrl, or fall back to http://127.0.0.1:{port} to
+      // avoid SSL issues behind reverse proxies, or use the request origin.
+      const effectiveBaseUrl =
+        config.baseUrl ??
+        `http://127.0.0.1:${url.port || (url.protocol === "https:" ? "443" : "3000")}`;
+      return handleChat(req, config, session, getToolDefinitions, effectiveBaseUrl);
     }
 
     return new Response("Not Found", { status: 404 });

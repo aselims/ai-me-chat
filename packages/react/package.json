@@ -1,6 +1,6 @@
 {
   "name": "@ai-me-chat/react",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "AI-Me React UI components — chat panel, command palette, confirmation dialog",
   "license": "MIT",
   "keywords": [

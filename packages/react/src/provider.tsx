@@ -35,13 +35,19 @@ export interface AIMeProviderProps {
    * state. Set to 0 to disable. Default: 30000 (30 seconds).
    */
   stuckTimeout?: number;
+  /**
+   * Session storage key for conversation persistence.
+   * Default: derived from endpoint as `"ai-me-messages:{endpoint}"`.
+   * Useful when running multiple AI-Me instances on the same domain.
+   */
+  storageKey?: string;
   /** Child components */
   children: ReactNode;
 }
 
-export function AIMeProvider({ endpoint, headers, onAction, stuckTimeout, children }: AIMeProviderProps) {
+export function AIMeProvider({ endpoint, headers, onAction, stuckTimeout, storageKey, children }: AIMeProviderProps) {
   return (
-    <AIMeContext value={{ endpoint, headers, onAction, stuckTimeout }}>
+    <AIMeContext value={{ endpoint, headers, onAction, stuckTimeout, storageKey }}>
       {children}
     </AIMeContext>
   );

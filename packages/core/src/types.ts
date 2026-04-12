@@ -26,6 +26,18 @@ export interface AIMeConfig {
 
   /** Provider-specific options passed to streamText (e.g., { openai: { strictJsonSchema: false } }) */
   providerOptions?: Record<string, Record<string, unknown>>;
+
+  /**
+   * Base URL for internal tool HTTP calls.
+   *
+   * Behind an SSL-terminating reverse proxy (Nginx, Cloudflare, ALB), the
+   * request origin is `https://...` but the Next.js server only speaks HTTP.
+   * Set this to the internal HTTP address (e.g., `http://127.0.0.1:3000`)
+   * so tool calls bypass the proxy.
+   *
+   * Default: derived from the incoming request URL origin.
+   */
+  baseUrl?: string;
 }
 
 export interface DiscoveryConfig {

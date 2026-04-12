@@ -3,6 +3,7 @@ export type { AIMeProviderProps } from "./provider.js";
 export { AIMeChat } from "./chat.js";
 export type {
   AIMeChatProps,
+  AIMeChatLabels,
   ToolCompleteEvent,
   MessageCompleteEvent,
 } from "./chat.js";

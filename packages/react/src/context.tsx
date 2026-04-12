@@ -24,6 +24,11 @@ export interface AIMeContextValue {
    * state. Set to 0 to disable. Default: 30000 (30 seconds).
    */
   stuckTimeout?: number;
+  /**
+   * Session storage key for conversation persistence.
+   * Default: derived from endpoint as `"ai-me-messages:{endpoint}"`.
+   */
+  storageKey?: string;
 }
 
 export const AIMeContext = createContext<AIMeContextValue | null>(null);

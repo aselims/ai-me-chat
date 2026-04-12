@@ -6,7 +6,7 @@ import {
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useAIMeContext } from "./context.js";
 
-const STORAGE_KEY = "ai-me-messages";
+const DEFAULT_STORAGE_KEY = "ai-me-messages";
 
 /**
  * Strip malformed tool-call XML that some open-source models emit as plain
@@ -76,8 +76,9 @@ function trimIncompleteToolCalls<T extends { role: string; parts: ToolPartLike[]
  * and session persistence (survives page navigation within the same tab).
  */
 export function useAIMe() {
-  const { endpoint, headers, stuckTimeout: configuredTimeout } = useAIMeContext();
+  const { endpoint, headers, stuckTimeout: configuredTimeout, storageKey: configuredStorageKey } = useAIMeContext();
   const stuckTimeout = configuredTimeout ?? 30_000;
+  const storageKey = configuredStorageKey ?? `${DEFAULT_STORAGE_KEY}:${endpoint}`;
   const [input, setInput] = useState("");
   const initialized = useRef(false);
 
@@ -118,7 +119,7 @@ export function useAIMe() {
     initialized.current = true;
 
     try {
-      const stored = sessionStorage.getItem(STORAGE_KEY);
+      const stored = sessionStorage.getItem(storageKey);
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -138,9 +139,9 @@ export function useAIMe() {
     if (!initialized.current) return;
     try {
       if (chat.messages.length > 0) {
-        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(chat.messages));
+        sessionStorage.setItem(storageKey, JSON.stringify(chat.messages));
       } else {
-        sessionStorage.removeItem(STORAGE_KEY);
+        sessionStorage.removeItem(storageKey);
       }
     } catch {
       // ignore
@@ -177,7 +178,7 @@ export function useAIMe() {
   const clearMessages = useCallback(() => {
     chat.setMessages([]);
     try {
-      sessionStorage.removeItem(STORAGE_KEY);
+      sessionStorage.removeItem(storageKey);
     } catch {
       // ignore
     }

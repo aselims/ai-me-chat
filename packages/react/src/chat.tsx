@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback, useId, useMemo, Fragment } fr
 import type { CSSProperties, ReactNode } from "react";
 import { useAIMe, isToolPart, getToolName, TERMINAL_TOOL_STATES } from "./use-ai-me.js";
 import type { ToolPartLike } from "./use-ai-me.js";
-import { defaultThemeVars, themeToVars } from "./styles.js";
+import { themeToVars, resolveBaseThemeVars } from "./styles.js";
 import type { AIMeTheme } from "./styles.js";
 import { renderMarkdown } from "./markdown.js";
 import { AIMeConfirm } from "./confirm.js";
@@ -26,6 +26,30 @@ export interface MessageCompleteEvent {
   role: string;
   content: string;
   toolCalls?: unknown[];
+}
+
+/** Override UI strings for i18n or branding. All fields are optional with English defaults. */
+export interface AIMeChatLabels {
+  /** Chat header title. Default: "AI Assistant" */
+  title?: string;
+  /** Input placeholder text. Default: "Ask anything…" */
+  placeholder?: string;
+  /** Submit button text. Default: "Send" */
+  send?: string;
+  /** Loading indicator text. Default: "Thinking…" */
+  thinking?: string;
+  /** Default error message. Default: "Something went wrong. Please try again." */
+  error?: string;
+  /** Heading above suggested prompts. Default: "Suggested questions:" */
+  suggestedHeading?: string;
+  /** Trigger button aria-label. Default: "Open AI chat" */
+  openChat?: string;
+  /** Close button aria-label. Default: "Close chat" */
+  closeChat?: string;
+  /** Skip-to-input link text. Default: "Skip to message input" */
+  skipToInput?: string;
+  /** Input field accessible label. Default: "Message to AI Assistant" */
+  inputLabel?: string;
 }
 
 export interface AIMeChatProps {
@@ -53,6 +77,45 @@ export interface AIMeChatProps {
   onMessageComplete?: (message: MessageCompleteEvent) => void;
   /** Custom icon for the floating trigger button. Defaults to a sparkle/AI SVG. */
   triggerIcon?: ReactNode;
+  /**
+   * Shorthand for `labels.title` — the chat header title.
+   * If both `title` and `labels.title` are provided, `title` wins.
+   * Default: "AI Assistant"
+   */
+  title?: string;
+  /**
+   * Override any UI string for i18n or branding.
+   * See `AIMeChatLabels` for available keys.
+   *
+   * @example
+   * ```tsx
+   * <AIMeChat
+   *   labels={{
+   *     title: "KI-Assistent",
+   *     placeholder: "Frage stellen…",
+   *     send: "Senden",
+   *     thinking: "Denkt nach…",
+   *   }}
+   * />
+   * ```
+   */
+  labels?: AIMeChatLabels;
+  /**
+   * Show a "Clear conversation" button in the header when messages exist.
+   * Default: true
+   */
+  showClearButton?: boolean;
+  /**
+   * Use a `<textarea>` instead of a single-line `<input>`.
+   * Auto-grows up to 5 rows. Submit with Enter (Shift+Enter for newline).
+   * Default: false
+   */
+  multiline?: boolean;
+  /**
+   * Custom error renderer. Receives the Error object.
+   * When not provided, the default styled error with `labels.error` text is shown.
+   */
+  renderError?: (error: Error) => ReactNode;
   /**
    * Custom renderer for the tool confirmation dialog.
    *
@@ -98,6 +161,35 @@ export interface AIMeChatProps {
   }) => ReactNode;
 }
 
+/** Style for icon-only header buttons (clear, close). */
+function iconButtonStyle(fontSize: number): CSSProperties {
+  return {
+    background: "none",
+    border: "none",
+    cursor: "pointer",
+    fontSize,
+    color: "var(--ai-me-text-secondary)",
+    padding: 4,
+    borderRadius: 4,
+    outline: "2px solid transparent",
+    outlineOffset: 2,
+  };
+}
+
+/** Shared base style for the chat input element (input or textarea). */
+const baseInputStyle: CSSProperties = {
+  flex: 1,
+  padding: "8px 12px",
+  border: "1px solid var(--ai-me-border)",
+  borderRadius: 8,
+  fontSize: 14,
+  fontFamily: "var(--ai-me-font)",
+  outline: "2px solid transparent",
+  outlineOffset: 2,
+  backgroundColor: "var(--ai-me-bg)",
+  color: "var(--ai-me-text)",
+};
+
 /** Visually hidden but accessible to screen readers */
 const srOnly: CSSProperties = {
   position: "absolute",
@@ -131,11 +223,38 @@ export function AIMeChat({
   onToolComplete,
   onMessageComplete,
   triggerIcon,
+  title,
+  labels: labelsProp,
+  showClearButton = true,
+  multiline = false,
+  renderError,
   renderConfirmation,
 }: AIMeChatProps) {
+  const resolvedTitle = title ?? labelsProp?.title ?? "AI Assistant";
+  const l = {
+    title: resolvedTitle,
+    placeholder: labelsProp?.placeholder ?? "Ask anything\u2026",
+    send: labelsProp?.send ?? "Send",
+    thinking: labelsProp?.thinking ?? "Thinking\u2026",
+    error: labelsProp?.error ?? "Something went wrong. Please try again.",
+    suggestedHeading: labelsProp?.suggestedHeading ?? "Suggested questions:",
+    openChat: labelsProp?.openChat ?? "Open AI chat",
+    closeChat: labelsProp?.closeChat ?? "Close chat",
+    skipToInput: labelsProp?.skipToInput ?? "Skip to message input",
+    inputLabel: labelsProp?.inputLabel ?? `Message to ${resolvedTitle}`,
+  };
+
+  // Stable focus/blur handlers for visible focus rings (avoids outline:none)
+  const handleFocusOutline = useCallback((e: React.FocusEvent<HTMLElement>) => {
+    e.currentTarget.style.outline = "2px solid var(--ai-me-primary)";
+  }, []);
+  const handleBlurOutline = useCallback((e: React.FocusEvent<HTMLElement>) => {
+    e.currentTarget.style.outline = "2px solid transparent";
+  }, []);
+
   const [open, setOpen] = useState(defaultOpen);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   // Track tool-result part IDs that have already fired onToolComplete
@@ -150,6 +269,7 @@ export function AIMeChat({
     status,
     error,
     setInput,
+    clearMessages,
     addToolApprovalResponse,
   } = useAIMe();
 
@@ -319,8 +439,19 @@ export function AIMeChat({
     return pending;
   }, [messages]);
 
+  // Dark mode: track prefers-color-scheme when colorScheme is "auto"
+  const [prefersDark, setPrefersDark] = useState(false);
+  useEffect(() => {
+    if (theme?.colorScheme !== "auto") return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    setPrefersDark(mq.matches);
+    const onChange = (e: MediaQueryListEvent) => setPrefersDark(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [theme?.colorScheme]);
+
   const themeVars: CSSProperties = {
-    ...defaultThemeVars,
+    ...resolveBaseThemeVars(theme?.colorScheme, prefersDark),
     ...themeToVars(theme),
   } as CSSProperties;
 
@@ -387,7 +518,7 @@ export function AIMeChat({
         ref={triggerRef}
         onClick={toggleOpen}
         style={triggerStyle}
-        aria-label="Open AI chat"
+        aria-label={l.openChat}
         aria-expanded={open}
         aria-controls={isInline ? undefined : "ai-me-chat-panel"}
         type="button"
@@ -420,37 +551,36 @@ export function AIMeChat({
           }}
         >
           <span id={titleId} style={{ fontWeight: 600, fontSize: 14 }}>
-            AI Assistant
+            {l.title}
           </span>
-          {!isInline && (
-            <button
-              onClick={toggleOpen}
-              style={{
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                fontSize: 18,
-                color: "var(--ai-me-text-secondary)",
-                padding: 4,
-                borderRadius: 4,
-                // Visible focus indicator without outline:none
-                outline: "2px solid transparent",
-                outlineOffset: 2,
-              }}
-              onFocus={(e) => {
-                (e.currentTarget as HTMLButtonElement).style.outline =
-                  "2px solid var(--ai-me-primary)";
-              }}
-              onBlur={(e) => {
-                (e.currentTarget as HTMLButtonElement).style.outline =
-                  "2px solid transparent";
-              }}
-              aria-label="Close chat"
-              type="button"
-            >
-              <span aria-hidden="true">✕</span>
-            </button>
-          )}
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            {showClearButton && messages.length > 0 && (
+              <button
+                onClick={clearMessages}
+                style={iconButtonStyle(14)}
+                onFocus={handleFocusOutline}
+                onBlur={handleBlurOutline}
+                aria-label="Clear conversation"
+                type="button"
+              >
+                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 6h18" /><path d="M8 6V4h8v2" /><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6" />
+                </svg>
+              </button>
+            )}
+            {!isInline && (
+              <button
+                onClick={toggleOpen}
+                style={iconButtonStyle(18)}
+                onFocus={handleFocusOutline}
+                onBlur={handleBlurOutline}
+                aria-label={l.closeChat}
+                type="button"
+              >
+                <span aria-hidden="true">✕</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Skip link: jump straight to the input */}
@@ -480,7 +610,7 @@ export function AIMeChat({
             Object.assign((e.currentTarget as HTMLAnchorElement).style, srOnly);
           }}
         >
-          Skip to message input
+          {l.skipToInput}
         </a>
 
         {/* Messages — live region so screen readers announce new content */}
@@ -511,7 +641,7 @@ export function AIMeChat({
                   }}
                 >
                   <p style={{ margin: "0 0 4px", fontSize: 12, fontWeight: 500 }}>
-                    Suggested questions:
+                    {l.suggestedHeading}
                   </p>
                   {suggestedPrompts.map((prompt) => (
                     <button
@@ -533,14 +663,8 @@ export function AIMeChat({
                         outline: "2px solid transparent",
                         outlineOffset: 2,
                       }}
-                      onFocus={(e) => {
-                        (e.currentTarget as HTMLButtonElement).style.outline =
-                          "2px solid var(--ai-me-primary)";
-                      }}
-                      onBlur={(e) => {
-                        (e.currentTarget as HTMLButtonElement).style.outline =
-                          "2px solid transparent";
-                      }}
+                      onFocus={handleFocusOutline}
+                      onBlur={handleBlurOutline}
                     >
                       {prompt}
                     </button>
@@ -597,32 +721,35 @@ export function AIMeChat({
           {/* "Thinking" indicator — announced by the live region above */}
           {status === "submitted" && (
             <div
-              aria-label="Assistant is thinking"
+              aria-label={l.thinking}
               style={{
                 alignSelf: "flex-start",
                 color: "var(--ai-me-text-secondary)",
                 fontSize: 13,
               }}
             >
-              <span aria-hidden="true">Thinking…</span>
+              <span aria-hidden="true">{l.thinking}</span>
             </div>
           )}
 
           {/* Error — role="alert" ensures immediate announcement */}
           {error && (
-            <div
-              role="alert"
-              style={{
-                padding: "8px 12px",
-                borderRadius: 8,
-                backgroundColor: "#fef2f2",
-                // #dc2626 on #fef2f2 ≈ 5.1:1 — passes AA for normal text
-                color: "#dc2626",
-                fontSize: 13,
-                border: "1px solid #fca5a5",
-              }}
-            >
-              Something went wrong. Please try again.
+            <div role="alert">
+              {renderError ? renderError(error) : (
+                <div
+                  style={{
+                    padding: "8px 12px",
+                    borderRadius: 8,
+                    backgroundColor: "#fef2f2",
+                    // #dc2626 on #fef2f2 ≈ 5.1:1 — passes AA for normal text
+                    color: "#dc2626",
+                    fontSize: 13,
+                    border: "1px solid #fca5a5",
+                  }}
+                >
+                  {l.error}
+                </div>
+              )}
             </div>
           )}
 
@@ -644,38 +771,49 @@ export function AIMeChat({
             htmlFor="ai-me-chat-input"
             style={srOnly}
           >
-            Message to AI Assistant
+            {l.inputLabel}
           </label>
-          <input
-            id="ai-me-chat-input"
-            ref={inputRef}
-            value={input}
-            onChange={handleInputChange}
-            placeholder="Ask anything…"
-            disabled={status !== "ready"}
-            aria-disabled={status !== "ready"}
-            style={{
-              flex: 1,
-              padding: "8px 12px",
-              border: "1px solid var(--ai-me-border)",
-              borderRadius: 8,
-              fontSize: 14,
-              fontFamily: "var(--ai-me-font)",
-              // Do NOT use outline:none — use outline with transparent color + focus handler
-              outline: "2px solid transparent",
-              outlineOffset: 2,
-              backgroundColor: "var(--ai-me-bg)",
-              color: "var(--ai-me-text)",
-            }}
-            onFocus={(e) => {
-              (e.currentTarget as HTMLInputElement).style.outline =
-                "2px solid var(--ai-me-primary)";
-            }}
-            onBlur={(e) => {
-              (e.currentTarget as HTMLInputElement).style.outline =
-                "2px solid transparent";
-            }}
-          />
+          {multiline ? (
+            <textarea
+              id="ai-me-chat-input"
+              ref={inputRef as React.RefObject<HTMLTextAreaElement>}
+              value={input}
+              onChange={(e) => {
+                handleInputChange(e);
+                const el = e.currentTarget;
+                requestAnimationFrame(() => {
+                  el.style.height = "auto";
+                  el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+                });
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSubmit();
+                }
+              }}
+              placeholder={l.placeholder}
+              disabled={status !== "ready"}
+              aria-disabled={status !== "ready"}
+              rows={1}
+              style={{ ...baseInputStyle, resize: "none", overflow: "auto" }}
+              onFocus={handleFocusOutline}
+              onBlur={handleBlurOutline}
+            />
+          ) : (
+            <input
+              id="ai-me-chat-input"
+              ref={inputRef as React.RefObject<HTMLInputElement>}
+              value={input}
+              onChange={handleInputChange}
+              placeholder={l.placeholder}
+              disabled={status !== "ready"}
+              aria-disabled={status !== "ready"}
+              style={baseInputStyle}
+              onFocus={handleFocusOutline}
+              onBlur={handleBlurOutline}
+            />
+          )}
           <button
             type="submit"
             disabled={status !== "ready" || !input.trim()}
@@ -693,18 +831,11 @@ export function AIMeChat({
               outline: "2px solid transparent",
               outlineOffset: 2,
             }}
-            onFocus={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.outline =
-                "2px solid var(--ai-me-primary)";
-              (e.currentTarget as HTMLButtonElement).style.outlineOffset = "2px";
-            }}
-            onBlur={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.outline =
-                "2px solid transparent";
-            }}
-            aria-label="Send message"
+            onFocus={handleFocusOutline}
+            onBlur={handleBlurOutline}
+            aria-label={l.send}
           >
-            Send
+            {l.send}
           </button>
         </form>
       </div>

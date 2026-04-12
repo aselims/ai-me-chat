@@ -35,6 +35,65 @@ export function renderMarkdown(text: string): ReactNode[] {
       continue;
     }
 
+    // Table (lines starting with |)
+    if (/^\|/.test(line.trim())) {
+      const tableLines: string[] = [];
+      while (i < lines.length && /^\|/.test(lines[i].trim())) {
+        tableLines.push(lines[i]);
+        i++;
+      }
+      // Need at least a header + separator (2 lines)
+      if (tableLines.length >= 2) {
+        const parseRow = (row: string): string[] =>
+          row.split("|").slice(1, -1).map((c) => c.trim());
+
+        const headers = parseRow(tableLines[0]);
+        // Skip separator row (index 1), parse data rows
+        const dataRows = tableLines.slice(2).map(parseRow);
+
+        result.push(
+          <table
+            key={`tbl-${result.length}`}
+            style={tableStyle}
+          >
+            <thead>
+              <tr>
+                {headers.map((h, ci) => (
+                  <th key={ci} style={thStyle}>
+                    {renderInline(h)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {dataRows.map((row, ri) => (
+                <tr key={ri}>
+                  {row.map((cell, ci) => (
+                    <td key={ci} style={tdStyle}>
+                      {renderInline(cell)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>,
+        );
+      } else {
+        // Not enough lines for a table, render as plain text
+        for (const tl of tableLines) {
+          result.push(
+            <span
+              key={`p-${result.length}`}
+              style={{ display: "block", marginBottom: 2 }}
+            >
+              {renderInline(tl)}
+            </span>,
+          );
+        }
+      }
+      continue;
+    }
+
     // Unordered list item
     if (/^[\s]*[-*]\s/.test(line)) {
       const listItems: ReactNode[] = [];
@@ -198,4 +257,25 @@ const linkStyle: CSSProperties = {
   color: "var(--ai-me-primary, #6366f1)",
   textDecoration: "underline",
   textUnderlineOffset: "2px",
+};
+
+const tableStyle: CSSProperties = {
+  margin: "6px 0",
+  borderCollapse: "collapse",
+  width: "100%",
+  fontSize: 13,
+};
+
+const thStyle: CSSProperties = {
+  padding: "4px 8px",
+  borderBottom: "2px solid rgba(0,0,0,0.15)",
+  textAlign: "left",
+  fontWeight: 600,
+  fontSize: 12,
+};
+
+const tdStyle: CSSProperties = {
+  padding: "4px 8px",
+  borderBottom: "1px solid rgba(0,0,0,0.08)",
+  fontSize: 12,
 };
